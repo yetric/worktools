@@ -1,0 +1,62 @@
+#compdef svc db dots
+
+_worktools_units() {
+  local -a units
+  units=(${(f)"$(systemctl "${worktools_scope:---user}" list-unit-files --type=service,timer --no-legend --no-pager 2>/dev/null | awk '{print $1}')"})
+  units+=(${(f)"$(command svc list --aliases --json 2>/dev/null | python3 -c 'import json,sys; print("\n".join(row["name"] for row in json.load(sys.stdin)))' 2>/dev/null)"})
+  _describe 'service or timer' units
+}
+
+_worktools_connections() {
+  local -a connections
+  local -a directory_args
+  [[ -n "$worktools_directory" ]] && directory_args=(--directory "$worktools_directory")
+  connections=(${(f)"$(command db "${directory_args[@]}" list --json 2>/dev/null | python3 -c 'import json,sys; print("\n".join(row["name"] for row in json.load(sys.stdin)))' 2>/dev/null)"})
+  _describe 'database connection' connections
+}
+
+_worktools() {
+  local context state line curcontext="$curcontext"
+  local -A opt_args
+  local -a commands names
+  local worktools_scope=--user worktools_directory=''
+  names=(shell git profile ghostty alacritty zed starship fonts mise)
+  case "$service" in
+    svc)
+      commands=('list:List services' 'status:Inspect a unit' 'start:Start a unit' 'stop:Stop a unit' 'restart:Restart a unit' 'logs:Read unit logs' 'timers:List timers' 'failed:List failed units')
+      _arguments -C '--help[Show help]' '--system[Use system units]' '1:action:->commands' '*::argument:->args'
+      [[ -n "${opt_args[--system]}" ]] && worktools_scope=--system
+      ;;
+    db)
+      commands=('list:List configured connections' 'info:Inspect a connection' 'connect:Open the native client' 'query:Execute a SQL file')
+      _arguments -C '--help[Show help]' '--directory[Project directory]:directory:_directories' '1:action:->commands' '*::argument:->args'
+      worktools_directory="${opt_args[--directory]}"
+      ;;
+    dots)
+      commands=('list:List configuration paths' 'show:Inspect a configuration' 'edit:Edit the actual source' 'check:Check links and supported syntax' 'diff:Show Git changes')
+      _arguments -C '--help[Show help]' '1:action:->commands' '*::argument:->args'
+      ;;
+  esac
+  case "$state" in
+    commands) _describe 'action' commands ;;
+    args)
+      case "$service:$words[1]" in
+        svc:logs) _arguments '--help[Show help]' '--json[JSON lines]' '(-f --follow)'{-f,--follow}'[Follow new entries]' '(-n --lines)'{-n,--lines}'[Number of entries]:lines:' '--since[Show entries since]:time:' '1:unit:_worktools_units' ;;
+        svc:status) _arguments '--help[Show help]' '--json[Structured output]' '1:unit:_worktools_units' ;;
+        svc:start|svc:stop|svc:restart) _arguments '--help[Show help]' '1:unit:_worktools_units' ;;
+        svc:list) _arguments '--help[Show help]' '--json[Structured output]' '--aliases[List configured aliases without contacting systemd]' ;;
+        svc:*) _arguments '--help[Show help]' '--json[Structured output]' ;;
+        db:info) _arguments '--help[Show help]' '--json[Structured output]' '1:connection:_worktools_connections' ;;
+        db:connect) _arguments '--help[Show help]' '--pick[Choose interactively; uses fzf if available]' '1:connection:_worktools_connections' ;;
+        db:query) _arguments '--help[Show help]' '--file[SQL file]:file:_files' '1:connection:_worktools_connections' ;;
+        db:list) _arguments '--help[Show help]' '--json[Structured output]' ;;
+        dots:show|dots:check) _arguments '--help[Show help]' '--json[Structured output]' "1:configuration:($names)" ;;
+        dots:edit) _arguments '--help[Show help]' '--pick[Choose interactively; uses fzf if available]' "1:configuration:($names)" ;;
+        dots:diff) _arguments '--help[Show help]' "1:configuration:($names)" ;;
+        dots:list) _arguments '--help[Show help]' '--json[Structured output]' ;;
+      esac
+      ;;
+  esac
+}
+
+_worktools "$@"
