@@ -121,27 +121,25 @@ func capture(argv ...string) ([]byte, error) {
 	return command.Output()
 }
 func choose(choices []string, title string) (string, error) {
+	rows := make([]pickerChoice, 0, len(choices))
+	for _, choice := range choices {
+		rows = append(rows, pickerChoice{Value: choice, Label: singleLine(choice)})
+	}
+	return chooseRows(rows, title, "")
+}
+
+func chooseRows(choices []pickerChoice, title, header string) (string, error) {
 	if !terminal(os.Stdin) || !terminal(os.Stdout) {
 		return "", errors.New("picker requires a terminal; pass a name explicitly")
 	}
 	if _, e := exec.LookPath("fzf"); e == nil {
-		command := exec.Command("fzf", "--prompt", title+"> ")
-		command.Stdin = strings.NewReader(strings.Join(choices, "\n") + "\n")
-		command.Stderr = os.Stderr
-		result, e := command.Output()
-		if e != nil {
-			return "", e
-		}
-		selected := strings.TrimSpace(string(result))
-		for _, choice := range choices {
-			if choice == selected {
-				return choice, nil
-			}
-		}
-		return "", errors.New("invalid selection")
+		return chooseFZF(choices, title, header)
+	}
+	if header != "" {
+		fmt.Printf("   %s\n", header)
 	}
 	for i, choice := range choices {
-		fmt.Printf("%d. %s\n", i+1, choice)
+		fmt.Printf("%d. %s\n", i+1, choice.Label)
 	}
 	reader := bufio.NewReader(os.Stdin)
 	for {
@@ -152,7 +150,7 @@ func choose(choices []string, title string) (string, error) {
 		}
 		n, e := strconv.Atoi(strings.TrimSpace(line))
 		if e == nil && n > 0 && n <= len(choices) {
-			return choices[n-1], nil
+			return choices[n-1].Value, nil
 		}
 		fmt.Println("Choose a number from the list.")
 	}
@@ -289,18 +287,15 @@ func runDev(args []string) (int, error) {
 		name = o.Pos[1]
 	}
 	if o.Flags["--pick"] {
-		choices := []string{}
-		for _, r := range records {
-			choices = append(choices, r.Name+"\t"+r.Description+" ["+r.Status+"]")
-		}
+		choices, header := actionChoices(records)
 		if len(choices) == 0 {
 			return 0, errors.New("no actions found; configure dev.actions in .worktools.toml")
 		}
-		choice, e := choose(choices, "action")
+		choice, e := chooseRows(choices, "action", header)
 		if e != nil {
 			return 0, e
 		}
-		name = strings.SplitN(choice, "\t", 2)[0]
+		name = choice
 	}
 	var selected *dev.Record
 	for i := range records {
