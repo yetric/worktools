@@ -1,0 +1,7 @@
+[dev.actions.test]
+command = ["go", "test", "./..."]
+description = "Run the Worktools test suite"
+
+[dev.actions.check]
+command = ["go", "vet", "./..."]
+description = "Check Go code with go vet"

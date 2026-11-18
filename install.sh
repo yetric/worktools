@@ -1,40 +1,62 @@
 #!/usr/bin/env bash
-# Install symlinks into a user prefix; never download or install dependencies.
+# Build a single Go binary and install user-local symlinks.
 set -euo pipefail
-
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PREFIX="${WORKTOOLS_PREFIX:-$HOME/.local}"
-if [[ "${1:-}" == "--help" ]]; then
-  echo 'Usage: ./install.sh [--prefix DIRECTORY]'
-  echo 'Installs svc, db, dots, and Zsh completion using symlinks.'
-  exit 0
+BINARY=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --help|-h)
+      echo 'Usage: ./install.sh [--prefix DIRECTORY] [--binary PREBUILT_FILE]'
+      echo 'Installs worktools, dev, svc, db, dots, and Zsh completion.'
+      exit 0 ;;
+    --prefix|--binary)
+      [[ $# -ge 2 ]] || { echo "Missing value for $1" >&2; exit 2; }
+      if [[ "$1" == --prefix ]]; then PREFIX="$2"; else BINARY="$2"; fi
+      shift 2 ;;
+    *) echo "Unknown option: $1" >&2; exit 2 ;;
+  esac
+done
+if [[ -n "$BINARY" ]]; then
+  [[ -f "$BINARY" && -x "$BINARY" ]] || { echo 'Prebuilt binary must be an executable file' >&2; exit 2; }
+  BINARY="$(cd "$(dirname "$BINARY")" && pwd)/$(basename "$BINARY")"
 fi
-if [[ $# -gt 0 ]]; then
-  if [[ $# != 2 || $1 != --prefix ]]; then
-    echo 'Usage: ./install.sh [--prefix DIRECTORY]' >&2
-    exit 2
-  fi
-  PREFIX="$2"
-fi
-python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else "Python 3.11+ is required")'
-
-destinations=("$PREFIX/bin/svc" "$PREFIX/bin/db" "$PREFIX/bin/dots" "$PREFIX/share/zsh/site-functions/_worktools")
-sources=("$ROOT/bin/svc" "$ROOT/bin/db" "$ROOT/bin/dots" "$ROOT/completions/_worktools")
-# Preflight the whole installation to avoid overwriting unrelated commands.
+names=(worktools dev svc db dots)
+destinations=()
+sources=()
+for name in "${names[@]}"; do
+  destinations+=("$PREFIX/bin/$name")
+  sources+=("$ROOT/build/worktools")
+done
+destinations+=("$PREFIX/share/zsh/site-functions/_worktools")
+sources+=("$ROOT/completions/_worktools")
+# Check all paths before building or linking. Recognize only our previous Python
+# entry-point symlinks when migrating an installation from the initial version.
 for i in "${!destinations[@]}"; do
   dst="${destinations[$i]}"
   src="${sources[$i]}"
   if [[ -e "$dst" || -L "$dst" ]]; then
-    if [[ ! -L "$dst" || "$(readlink "$dst")" != "$src" ]]; then
+    prior="$ROOT/bin/$(basename "$dst")"
+    if [[ ! -L "$dst" ]] || { [[ "$(readlink "$dst")" != "$src" ]] && [[ "$(readlink "$dst")" != "$prior" ]]; }; then
       echo "Refusing to replace existing path: $dst" >&2
       exit 1
     fi
   fi
 done
+mkdir -p "$ROOT/build"
+if [[ -z "$BINARY" ]]; then
+  command -v go >/dev/null || { echo 'Go 1.23+ is required to build; alternatively pass --binary FILE' >&2; exit 1; }
+  (cd "$ROOT" && go build -trimpath -o "$ROOT/build/worktools.new" ./cmd/worktools)
+  mv "$ROOT/build/worktools.new" "$ROOT/build/worktools"
+elif [[ "$BINARY" != "$ROOT/build/worktools" ]]; then
+  cp "$BINARY" "$ROOT/build/worktools.new"
+  chmod +x "$ROOT/build/worktools.new"
+  mv "$ROOT/build/worktools.new" "$ROOT/build/worktools"
+fi
 for i in "${!destinations[@]}"; do
   dst="${destinations[$i]}"
   mkdir -p "$(dirname "$dst")"
-  [[ -L "$dst" ]] || ln -s "${sources[$i]}" "$dst"
+  ln -sfn "${sources[$i]}" "$dst"
   echo "Linked $dst"
 done
 echo 'Keep this checkout in place. Add <prefix>/bin to PATH.'

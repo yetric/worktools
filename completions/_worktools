@@ -1,9 +1,18 @@
-#compdef svc db dots
+#compdef worktools dev svc db dots
+
+_worktools_dev_actions() {
+  local -a actions directory_args
+  [[ -n "$worktools_directory" ]] && directory_args=(--directory "$worktools_directory")
+  actions=(${(f)"$(command worktools complete dev "${directory_args[@]}" 2>/dev/null)"})
+  [[ "$worktools_dev_inspect" != yes ]] && actions+=('list:List available project actions' 'explain:Explain how an action is resolved')
+  _describe 'project action' actions
+}
 
 _worktools_units() {
   local -a units
-  units=(${(f)"$(systemctl "${worktools_scope:---user}" list-unit-files --type=service,timer --no-legend --no-pager 2>/dev/null | awk '{print $1}')"})
-  units+=(${(f)"$(command svc list --aliases --json 2>/dev/null | python3 -c 'import json,sys; print("\n".join(row["name"] for row in json.load(sys.stdin)))' 2>/dev/null)"})
+  local -a scope_args
+  [[ "$worktools_scope" == --system ]] && scope_args=(--system)
+  units=(${(f)"$(command worktools complete svc "${scope_args[@]}" 2>/dev/null)"})
   _describe 'service or timer' units
 }
 
@@ -11,17 +20,32 @@ _worktools_connections() {
   local -a connections
   local -a directory_args
   [[ -n "$worktools_directory" ]] && directory_args=(--directory "$worktools_directory")
-  connections=(${(f)"$(command db "${directory_args[@]}" list --json 2>/dev/null | python3 -c 'import json,sys; print("\n".join(row["name"] for row in json.load(sys.stdin)))' 2>/dev/null)"})
+  connections=(${(f)"$(command worktools complete db "${directory_args[@]}" 2>/dev/null)"})
   _describe 'database connection' connections
 }
 
 _worktools() {
   local context state line curcontext="$curcontext"
+  local service="${service:-${words[1]}}"
   local -A opt_args
   local -a commands names
-  local worktools_scope=--user worktools_directory=''
+  local worktools_scope=--user worktools_directory='' worktools_dev_inspect=no
+  if [[ "$service" == worktools ]]; then
+    if (( CURRENT == 2 )); then
+      commands=('dev:Project development actions' 'svc:Services and timers' 'db:Project database connections' 'dots:Dotfiles inspection and editing')
+      _describe 'tool' commands
+      return
+    fi
+    service="${words[2]}"
+    words=("${words[@]:1}")
+    (( CURRENT-- ))
+  fi
   names=(shell git profile ghostty alacritty zed starship fonts mise)
   case "$service" in
+    dev)
+      _arguments -C '--help[Show help]' '--directory[Project directory]:directory:_directories' '--json[Structured inspection output]' '--dry-run[Explain without executing]' '--pick[Choose an action; uses fzf if available]' '1:action:->dev-actions' '*::argument:->dev-args'
+      worktools_directory="${opt_args[--directory]}"
+      ;;
     svc)
       commands=('list:List services' 'status:Inspect a unit' 'start:Start a unit' 'stop:Stop a unit' 'restart:Restart a unit' 'logs:Read unit logs' 'timers:List timers' 'failed:List failed units')
       _arguments -C '--help[Show help]' '--system[Use system units]' '1:action:->commands' '*::argument:->args'
@@ -38,6 +62,17 @@ _worktools() {
       ;;
   esac
   case "$state" in
+    dev-actions) _worktools_dev_actions ;;
+    dev-args)
+      if [[ "$words[1]" == explain ]]; then
+        worktools_dev_inspect=yes
+        _arguments '--help[Show help]' '--json[Structured output]' '1:action:_worktools_dev_actions'
+      elif [[ "$words[1]" == list ]]; then
+        _arguments '--help[Show help]' '--json[Structured output]'
+      else
+        _arguments '--help[Show help]' '--dry-run[Explain without executing]' '--json[Structured dry-run output]' '--pick[Choose an action; uses fzf if available]' '*:runner argument:_files'
+      fi
+      ;;
     commands) _describe 'action' commands ;;
     args)
       case "$service:$words[1]" in
