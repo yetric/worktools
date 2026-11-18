@@ -6,55 +6,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/yetric/worktools/internal/dev/provider"
 )
 
-// Action is the complete adapter contract. Command is an argument array, never shell text.
-type Action struct {
-	Name        string   `json:"name"`
-	Runner      string   `json:"runner"`
-	Command     []string `json:"command"`
-	Description string   `json:"description"`
-	Reason      string   `json:"reason"`
-	Separator   []string `json:"argument_separator,omitempty"`
-	Directory   string   `json:"directory"`
-}
-
-// Adapter implementations are compiled in. No installed or project-local code is loaded at runtime.
-type Adapter interface {
-	Name() string
-	Manifests() []string
-	Runners() []string
-	Discover(root string) ([]Action, error)
-}
-
-type adapter struct {
-	name             string
-	markers, runners []string
-	discover         func(string) ([]Action, error)
-}
-
-func (a adapter) Name() string                           { return a.name }
-func (a adapter) Manifests() []string                    { return a.markers }
-func (a adapter) Runners() []string                      { return a.runners }
-func (a adapter) Discover(root string) ([]Action, error) { return a.discover(root) }
-
-// Builtins is the sole registration point for environment adapters.
-func Builtins() []Adapter {
-	return []Adapter{
-		adapter{"make", []string{"GNUmakefile", "makefile", "Makefile"}, []string{"make"}, discoverMake},
-		adapter{"javascript", []string{"package.json"}, []string{"npm", "pnpm", "yarn", "bun"}, discoverJS},
-		adapter{"composer", []string{"composer.json"}, []string{"composer"}, discoverComposer},
-		adapter{"go", []string{"go.mod"}, []string{"go"}, discoverGo},
-		adapter{"rust", []string{"Cargo.toml"}, []string{"cargo"}, discoverRust},
-		adapter{"java", []string{"pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts"}, []string{"maven", "gradle"}, discoverJava},
-		adapter{"python", []string{"pyproject.toml", "Pipfile", "setup.py", "setup.cfg", "requirements.txt", "pytest.ini"}, []string{"python", "uv", "poetry", "pipenv"}, discoverPython},
-	}
-}
+type Action = provider.Action
+type Adapter = provider.Provider
 
 type Record struct {
 	Name                string   `json:"name"`
@@ -68,28 +28,6 @@ type Record struct {
 	Candidates          []Action `json:"candidates"`
 }
 
-var actionName = regexp.MustCompile(`^[a-zA-Z0-9_][a-zA-Z0-9_.:/-]*$`)
-
-func File(root, name string) bool {
-	s, e := os.Stat(filepath.Join(root, name))
-	return e == nil && !s.IsDir()
-}
-func read(root, name string) (string, error) {
-	b, e := os.ReadFile(filepath.Join(root, name))
-	return string(b), e
-}
-func contains(values []string, v string) bool {
-	for _, x := range values {
-		if x == v {
-			return true
-		}
-	}
-	return false
-}
-func action(name, runner string, command []string, reason string) Action {
-	return Action{Name: name, Runner: runner, Command: command, Description: runner + " " + name, Reason: reason}
-}
-
 func Root(directory string, adapters []Adapter) (string, error) {
 	directory, e := filepath.Abs(directory)
 	if e != nil {
@@ -100,13 +38,13 @@ func Root(directory string, adapters []Adapter) (string, error) {
 	}
 	nearest := ""
 	for p := directory; ; p = filepath.Dir(p) {
-		if File(p, ".worktools.toml") {
+		if provider.File(p, ".worktools.toml") {
 			return p, nil
 		}
 		if nearest == "" {
 			for _, a := range adapters {
 				for _, m := range a.Manifests() {
-					if File(p, m) {
+					if provider.File(p, m) {
 						nearest = p
 						break
 					}
@@ -141,7 +79,7 @@ type projectConfig struct {
 
 func Discover(root string, adapters []Adapter) ([]Record, error) {
 	config := projectConfig{}
-	if File(root, ".worktools.toml") {
+	if provider.File(root, ".worktools.toml") {
 		if _, e := toml.DecodeFile(filepath.Join(root, ".worktools.toml"), &config); e != nil {
 			return nil, fmt.Errorf(".worktools.toml: %w", e)
 		}
@@ -150,14 +88,14 @@ func Discover(root string, adapters []Adapter) ([]Record, error) {
 	for _, a := range adapters {
 		runners = append(runners, a.Runners()...)
 	}
-	if config.Dev.Runner != "" && !contains(runners, config.Dev.Runner) {
+	if config.Dev.Runner != "" && !provider.Contains(runners, config.Dev.Runner) {
 		return nil, fmt.Errorf("unknown preferred runner %q", config.Dev.Runner)
 	}
 	actions := map[string][]Action{}
 	for _, a := range adapters {
 		present := false
 		for _, m := range a.Manifests() {
-			present = present || File(root, m)
+			present = present || provider.File(root, m)
 		}
 		if !present {
 			continue
@@ -167,7 +105,7 @@ func Discover(root string, adapters []Adapter) ([]Record, error) {
 			return nil, fmt.Errorf("adapter %s: %w", a.Name(), e)
 		}
 		for _, entry := range found {
-			if !actionName.MatchString(entry.Name) || !contains(a.Runners(), entry.Runner) || len(entry.Command) == 0 || entry.Command[0] == "" {
+			if !provider.ValidName(entry.Name) || !provider.Contains(a.Runners(), entry.Runner) || len(entry.Command) == 0 || entry.Command[0] == "" {
 				return nil, fmt.Errorf("adapter %s returned an invalid action", a.Name())
 			}
 			for _, arg := range append(append([]string{}, entry.Command...), entry.Separator...) {
@@ -192,7 +130,7 @@ func Discover(root string, adapters []Adapter) ([]Record, error) {
 		}
 	}
 	for name, m := range config.Dev.Actions {
-		if !actionName.MatchString(name) || name == "list" || name == "explain" || len(m.Command) == 0 || m.Command[0] == "" {
+		if !provider.ValidName(name) || name == "list" || name == "explain" || len(m.Command) == 0 || m.Command[0] == "" {
 			return nil, fmt.Errorf("invalid dev.actions.%s mapping", name)
 		}
 		for _, arg := range append(append([]string{}, m.Command...), m.Separator...) {
@@ -214,7 +152,7 @@ func Discover(root string, adapters []Adapter) ([]Record, error) {
 		if m.Description == "" {
 			m.Description = "Configured action " + name
 		}
-		if m.Separator == nil && len(m.Command) > 1 && contains([]string{"npm", "composer"}, m.Command[0]) && m.Command[1] == "run" {
+		if m.Separator == nil && len(m.Command) > 1 && provider.Contains([]string{"npm", "composer"}, m.Command[0]) && m.Command[1] == "run" {
 			m.Separator = []string{"--"}
 		}
 		actions[name] = []Action{{Name: name, Runner: "configured", Command: m.Command, Description: m.Description, Reason: "Explicit dev.actions." + name + " mapping", Directory: dir, Separator: m.Separator}}

@@ -1,75 +1,101 @@
-# Adding a development environment
+# Adding a development provider
 
-Adapters discover actions. The core resolves ambiguity, applies project mappings,
-builds the picker/JSON output, and executes the selected argument array.
-Completion calls the same discovery through `worktools complete dev`.
+Every provider lives in its own package under `internal/dev/providers/`. Providers
+import only the domain contract (`internal/dev/provider`), not the resolver, CLI,
+or sibling providers. Package boundaries are checked by a test.
 
-All environments use the interface in `internal/dev/dev.go`:
+## Implement the contract
+
+Add `internal/dev/providers/moon/provider.go`:
 
 ```go
-type Adapter interface {
-    Name() string
-    Manifests() []string
-    Runners() []string
-    Discover(root string) ([]Action, error)
+package moon
+
+import "github.com/yetric/worktools/internal/dev/provider"
+
+type Provider struct{}
+
+var _ provider.Provider = Provider{}
+
+func (Provider) Name() string        { return "moon" }
+func (Provider) Manifests() []string { return []string{"Moonfile"} }
+func (Provider) Runners() []string   { return []string{"moon"} }
+
+func (Provider) Discover(root string) ([]provider.Action, error) {
+    // Inspect Moonfile to discover tasks. Do not execute it.
+    return []provider.Action{{
+        Name:        "test",
+        Runner:      "moon",
+        Command:     []string{"moon", "test"},
+        Description: "Run Moon tests",
+        Reason:      "Moonfile declares a test task",
+        Separator:   []string{"--"}, // Only inserted for forwarded arguments.
+    }}, nil
 }
 ```
 
-The result is data, not an executable callback:
+`Discover` is called only when a declared manifest exists at the selected project
+root. Return no action for capabilities the project does not declare. Marker
+filenames also participate in project-root detection automatically.
+
+Register it in `internal/dev/registry.go`: import the new package and add
+`moon.Provider{}` to `Builtins()`. No edits to the CLI, picker, completion, or
+execution code are needed.
+
+## Add standalone tests
+
+Create `internal/dev/providers/moon/provider_test.go`:
 
 ```go
-Action{
-    Name:        "test",
-    Runner:      "moon",
-    Command:     []string{"moon", "test"},
-    Description: "Run Moon tests",
-    Reason:      "Moonfile declares a test task",
-    Separator:   []string{"--"}, // Optional: inserted before forwarded arguments.
+package moon
+
+import (
+    "testing"
+    "github.com/yetric/worktools/internal/dev/providertest"
+)
+
+func TestProvider(t *testing.T) {
+    providertest.Check(t, Provider{}, providertest.Case{
+        Files:   map[string]string{"Moonfile": "test: moon test\n"},
+        Action:  "test",
+        Command: []string{"moon", "test"},
+    })
 }
 ```
 
-## Add an adapter
+The shared check verifies metadata, valid action records, repeatable discovery,
+expected arguments, and unchanged project files. Add provider-specific tests for
+invalid configuration, missing capabilities, wrappers, and version declarations.
+Use fixtures and fake tools; do not require an installed Moon runtime.
 
-1. Add a file in `internal/dev`, e.g. `moon.go`, containing a static discovery
-   function that returns actions.
-2. Register it in `Builtins()` with its manifest filenames and runner identifiers:
+```sh
+go test ./internal/dev/providers/moon
+go test ./...
+go vet ./...
+```
 
-   ```go
-   adapter{"moon", []string{"Moonfile"}, []string{"moon"}, discoverMoon},
-   ```
+The core's fictitious-environment test separately checks that a new provider
+participates in root detection and action resolution through the same interface.
 
-3. Add temporary-project tests. The existing `TestAdapterExtension` uses a fictitious
-   Moonfile to demonstrate root detection, descriptions, and argument separators
-   without editing the CLI.
-4. Run `go test ./...` and rebuild using `./install.sh`.
+## Action semantics
 
-Existing built-ins are separated into `scripts.go` (Make and package scripts),
-`languages.go` (Go, Rust, Java), and `python.go`. Contributors can add separate
-files without growing a central dispatch switch. No CLI or completion changes
-are required for a new environment or action.
+- `Command` is an executable and argument array, with no shell interpolation.
+- `Runner` must be one of the provider's declared identifiers. Users may select it
+  with `[dev] runner = "moon"`.
+- `Separator` is inserted only when the user forwards additional arguments.
+- `Description` and `Reason` explain the choice in the picker, completion, and JSON.
+- Execution uses the project root. Explicit project mappings may choose another
+  working directory.
+- Prefer `start`, `test`, `check`, `build` where meaningful; other actions are welcome.
+- Names support letters, digits, underscores, hyphens, dots, colons, and slashes.
+  `list` and `explain` are reserved inspection commands.
 
-`Manifests` declares marker filenames for project discovery. An adapter is called
-only if one of those files exists at the selected root. Runner identifiers can
-be selected with `[dev] runner = "moon"`. `Command` is an executable and argument
-array, without shell parsing. `Separator` is inserted only when the user forwards
-additional arguments. Execution always uses the project root; explicit project
-mappings can select another working directory.
+Discovery must only read files. Do not run build tools, import application code,
+mutate files, change directory, contact services, or install dependencies. Prefer
+project wrappers and version declarations. Do not invent startup for a library,
+or tests that can pass without exercising the project's actual test framework.
 
-## Discovery rules
-
-- Read project files; do not execute task files, subprocesses, or application code.
-- Do not change the working directory, mutate files, contact services, or install
-  dependencies while discovering actions.
-- Return no action for a capability that cannot be identified confidently.
-- Prefer project wrappers/version declarations to global guesses.
-- Use `start`, `test`, `check`, `build` where meaningful. Other actions are welcome.
-- Action names support letters, digits, underscores, hyphens, dots, colons, slashes.
-  `list` and `explain` are reserved and omitted from discovered actions.
-- Supply a description and reason so humans and agents can understand the choice.
-- Do not turn unknown tests into a command that can pass without running them.
-
-Adapters are compiled Go code. There is no dynamic library loading, automatic
-Python package discovery, or project-local executable plugin mechanism. This
-reduces runtime code-loading paths while leaving contributions straightforward.
-For one unusual project, a `.worktools.toml` command mapping is sufficient and
-avoids needing an adapter at all.
+Providers are compiled into Go. There is no automatic runtime plugin loading.
+For a single unusual project, explicit `.worktools.toml` actions are sufficient.
+See [CONTRIBUTING.md](../CONTRIBUTING.md) for the cross-tool rules and the planned
+container-provider layout.

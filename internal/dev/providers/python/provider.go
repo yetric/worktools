@@ -1,14 +1,24 @@
-package dev
+package python
 
 import (
+	"github.com/BurntSushi/toml"
+	"github.com/yetric/worktools/internal/dev/provider"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
-
-	"github.com/BurntSushi/toml"
 )
+
+type Provider struct{}
+
+var _ provider.Provider = Provider{}
+
+func (Provider) Name() string { return "python" }
+func (Provider) Manifests() []string {
+	return []string{"pyproject.toml", "Pipfile", "setup.py", "setup.cfg", "requirements.txt", "pytest.ini"}
+}
+func (Provider) Runners() []string { return []string{"python", "uv", "poetry", "pipenv"} }
 
 func collectStrings(value any) []string {
 	result := []string{}
@@ -58,9 +68,9 @@ func usesUnittest(root string) bool {
 	return false
 }
 
-func discoverPython(root string) ([]Action, error) {
+func (Provider) Discover(root string) ([]provider.Action, error) {
 	manifest := map[string]any{}
-	if File(root, "pyproject.toml") {
+	if provider.File(root, "pyproject.toml") {
 		if _, e := toml.DecodeFile(filepath.Join(root, "pyproject.toml"), &manifest); e != nil {
 			return nil, e
 		}
@@ -71,14 +81,14 @@ func discoverPython(root string) ([]Action, error) {
 	for _, value := range []any{project["dependencies"], project["optional-dependencies"], manifest["dependency-groups"], tool["poetry"]} {
 		declarations = append(declarations, collectStrings(value)...)
 	}
-	if File(root, "requirements.txt") {
-		text, e := read(root, "requirements.txt")
+	if provider.File(root, "requirements.txt") {
+		text, e := provider.Read(root, "requirements.txt")
 		if e != nil {
 			return nil, e
 		}
 		declarations = append(declarations, strings.Split(text, "\n")...)
 	}
-	if File(root, "Pipfile") {
+	if provider.File(root, "Pipfile") {
 		pip := map[string]any{}
 		if _, e := toml.DecodeFile(filepath.Join(root, "Pipfile"), &pip); e != nil {
 			return nil, e
@@ -99,29 +109,29 @@ func discoverPython(root string) ([]Action, error) {
 		prefix []string
 	}
 	envs := []environment{}
-	if File(root, "uv.lock") || hasKey(tool, "uv") {
+	if provider.File(root, "uv.lock") || hasKey(tool, "uv") {
 		envs = append(envs, environment{"uv", []string{"uv", "run", "--no-sync", "--no-python-downloads", "python"}})
 	}
-	if File(root, "poetry.lock") || hasKey(tool, "poetry") {
+	if provider.File(root, "poetry.lock") || hasKey(tool, "poetry") {
 		envs = append(envs, environment{"poetry", []string{"poetry", "run", "python"}})
 	}
-	if File(root, "Pipfile") {
+	if provider.File(root, "Pipfile") {
 		envs = append(envs, environment{"pipenv", []string{"pipenv", "run", "python"}})
 	}
 	if len(envs) == 0 {
 		interpreter := "python3"
-		if File(root, ".venv/bin/python") {
+		if provider.File(root, ".venv/bin/python") {
 			interpreter = filepath.Join(root, ".venv/bin/python")
 		}
 		envs = append(envs, environment{"python", []string{interpreter}})
 	}
-	result := []Action{}
+	result := []provider.Action{}
 	for _, env := range envs {
 		add := func(name string, args []string, reason string) {
 			command := append(append([]string{}, env.prefix...), args...)
-			result = append(result, action(name, env.runner, command, reason))
+			result = append(result, provider.NewAction(name, env.runner, command, reason))
 		}
-		if hasKey(tool, "pytest") || declared("pytest") || File(root, "pytest.ini") || File(root, "conftest.py") {
+		if hasKey(tool, "pytest") || declared("pytest") || provider.File(root, "pytest.ini") || provider.File(root, "conftest.py") {
 			add("test", []string{"-m", "pytest"}, "Declared pytest tooling")
 		} else if usesUnittest(root) {
 			dir := "."
@@ -139,14 +149,16 @@ func discoverPython(root string) ([]Action, error) {
 		}
 		if hasKey(manifest, "build-system") {
 			if env.runner == "poetry" {
-				result = append(result, action("build", "poetry", []string{"poetry", "build"}, "Python build-system and Poetry"))
+				result = append(result, provider.NewAction("build", "poetry", []string{"poetry", "build"}, "Python build-system and Poetry"))
 			} else {
 				add("build", []string{"-m", "build"}, "Python build-system; requires the build module")
 			}
 		}
-		if File(root, "manage.py") {
+		if provider.File(root, "manage.py") {
 			add("start", []string{"manage.py", "runserver"}, "Django manage.py convention")
 		}
 	}
 	return result, nil
 }
+
+var unittestImport = regexp.MustCompile(`(?m)^\s*(?:import\s+unittest\b|from\s+unittest(?:\.[\w.]+)?\s+import\b)`)

@@ -8,6 +8,17 @@ import (
 	"testing"
 )
 
+type adapter struct {
+	name             string
+	markers, runners []string
+	discover         func(string) ([]Action, error)
+}
+
+func (a adapter) Name() string                           { return a.name }
+func (a adapter) Manifests() []string                    { return a.markers }
+func (a adapter) Runners() []string                      { return a.runners }
+func (a adapter) Discover(root string) ([]Action, error) { return a.discover(root) }
+
 func fixture(t *testing.T, files map[string]string) string {
 	t.Helper()
 	root := t.TempDir()

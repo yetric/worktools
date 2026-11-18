@@ -130,11 +130,11 @@ because a `tests/` directory exists.
 
 ### New environments
 
-Built-in adapters implement a small Go interface. A new environment supplies
+Each built-in provider owns an independent Go package and implements a small interface. A new environment supplies
 marker filenames, runner names, and action records. The CLI, picker, JSON output,
 execution, and Tab completion use those records without environment-specific changes.
 
-See [Adding an adapter](docs/adapters.md). Third-party runtime plugins, Python
+See [Adding a provider](docs/adapters.md) and [CONTRIBUTING.md](CONTRIBUTING.md). Third-party runtime plugins, Python
 entry points, and project-local executable plugins are not loaded. A one-off
 project needs only an explicit command mapping; a broadly useful environment can
 contribute a compiled adapter.
