@@ -56,26 +56,28 @@ go vet ./...
 If a capability cannot be identified reliably, leave it unavailable and document
 the project override. Do not silently pick whichever executable is installed.
 
-## Container-provider design
+## Container providers
 
-`pod` is planned, not shipped yet. Its providers must follow the same package and
+`pod` providers follow the same package and
 PR boundaries: `internal/pod/provider`, `internal/pod/providers/docker`,
 `internal/pod/providers/podman`, `internal/pod/providers/nerdctl`, plus a registry
 and reusable contract tests.
 
-The container contract should be specific to containers, not reuse the development
-discovery interface or grow a universal provider interface. Each provider owns:
+The container contract is specific to containers. Each provider owns:
 
 - Read-only availability detection, including the separate Compose provider.
 - Explicit capability reporting; unsupported operations fail clearly.
 - Translating supported operations into argument arrays.
 - Provider-specific fixtures and tests without requiring a running engine.
 
-Shared `pod` code will own provider selection, context preservation, UI, JSON,
+Shared `pod` code owns provider selection, context preservation, UI, JSON,
 and execution. Detection must not start daemons/VMs or switch contexts. Docker-
 compatible environments can use the Docker provider; distinct command families
 need their own providers. Backend-specific flags must not be silently translated
 into something with a different meaning.
+
+See [Adding a container provider](docs/container-providers.md) for the interface,
+contract checks, and a PR checklist.
 
 ## Runtime extensions
 

@@ -30,7 +30,7 @@ func TestInstallerPreservesConflictsAndMigratesOwnedLinks(t *testing.T) {
 			t.Fatal(string(b), e)
 		}
 	}
-	for _, name := range []string{"worktools", "dev", "svc", "db", "dots"} {
+	for _, name := range []string{"worktools", "dev", "pod", "svc", "db", "dots"} {
 		target, e := os.Readlink(filepath.Join(prefix, "bin", name))
 		if e != nil || target != filepath.Join(root, "build/worktools") {
 			t.Fatal(name, target, e)

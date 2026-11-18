@@ -1,6 +1,6 @@
 # Worktools
 
-Small command families for humans and coding agents: `dev`, `pod` (planned),
+Small command families for humans and coding agents: `dev`, `pod`,
 `agent` (planned), `svc`, `db`, and `dots`. Fewer aliases, discoverable actions,
 Zsh completion, optional pickers, and structured inspection output.
 
@@ -17,7 +17,7 @@ cd worktools
 ```
 
 Building requires Go 1.23+. The installer builds `build/worktools`, then symlinks
-`worktools`, `dev`, `svc`, `db`, and `dots` into `~/.local/bin`. Keep the checkout
+`worktools`, `dev`, `pod`, `svc`, `db`, and `dots` into `~/.local/bin`. Keep the checkout
 in place; run `./install.sh` after updating source to rebuild the binary. Existing
 unrelated commands are never overwritten. Pinned Go modules may be downloaded
 when building. Native service tools and database clients are not installed.
@@ -139,6 +139,50 @@ entry points, and project-local executable plugins are not loaded. A one-off
 project needs only an explicit command mapping; a broadly useful environment can
 contribute a compiled adapter.
 
+## Project containers
+
+```sh
+pod providers --json          # Inspect Docker, Podman, and nerdctl availability
+pod --provider podman ps
+pod up --detach
+pod logs app --follow
+pod exec app -- sh
+pod services --json
+pod explain up --json         # Show selected backend and exact argument array
+pod down --dry-run
+```
+
+Each backend is an independent, compiled provider. Operations use its Compose
+interface: `up`, `down`, `ps`, `logs`, `exec`, `restart`, `build`, and `services`.
+`pod` opens an operation picker in a terminal; otherwise it defaults to `ps`.
+Native flags follow `--`, for example `pod up -- --build`. Arguments, working
+directory, native contexts, and environment are preserved.
+
+Selection order is `--provider`, `WORKTOOLS_POD_PROVIDER`, project configuration,
+then the sole available provider. Multiple available providers require a choice;
+the interactive picker can make a temporary choice. An explicit choice never
+falls back to another engine. Optional project configuration:
+
+```toml
+[pod]
+provider = "podman"
+# Optional; paths are relative to this configuration:
+files = ["compose.yaml", "compose.dev.yaml"]
+```
+
+Configuration is found in parent directories up to the Git boundary. `--file FILE`
+overrides configured files; otherwise Compose performs native file discovery from
+the working directory, including `COMPOSE_FILE`. Podman uses `podman compose` and
+honors its configured external Compose provider. Availability verifies the CLI
+and Compose command, not daemon readiness. Worktools never starts VMs/daemons or
+switches contexts automatically. Service completion runs read-only
+`compose config --services`; inspection does not print endpoint credentials.
+
+Docker-compatible environments use the Docker provider. See the
+[container-provider guide](docs/container-providers.md) to contribute a new backend.
+Server tools such as nginx and PM2 are being considered separately in
+[issue #1](https://github.com/yetric/worktools/issues/1).
+
 ## Services and timers
 
 ```sh
@@ -231,6 +275,9 @@ with simple quoted arguments and no shell expansion. It edits the actual source.
 ## Shell experience and automation
 
 - Tab completion shows actions/options, project actions, configs, units, and connections.
+  Type `dev ` followed by Tab (with a space) to see project actions; `dev go-`
+  followed by Tab narrows them by prefix. Run `exec zsh` after installing shell
+  integration so an existing terminal loads the new completion function.
 - Grey typeahead/history suggestions come from your shell, e.g. Zsh autosuggestions.
 - Explicit `--pick` uses fzf when available and a numbered menu otherwise.
 - `bat`, `eza`/`exa`, and zoxide remain compatible viewers and navigation tools;

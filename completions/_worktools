@@ -1,4 +1,4 @@
-#compdef worktools dev svc db dots
+#compdef worktools dev pod svc db dots
 
 _worktools_dev_actions() {
   local -a actions directory_args
@@ -24,15 +24,41 @@ _worktools_connections() {
   _describe 'database connection' connections
 }
 
+_worktools_pod_values() {
+  local -a entries arguments
+  local word next
+  local -i index
+  # _arguments shifts words for subcommands. Keep global options on either side
+  # of the operation when completing service names, stopping at native arguments.
+  for (( index = 2; index <= ${#worktools_original_words}; index++ )); do
+    word="$worktools_original_words[index]"
+    [[ "$word" == -- ]] && break
+    case "$word" in
+      --directory|--provider|--file)
+        (( index++ ))
+        next="$worktools_original_words[index]"
+        [[ -n "$next" ]] && arguments+=("$word" "$next")
+        ;;
+      --directory=*|--provider=*|--file=*) arguments+=("$word") ;;
+    esac
+  done
+  entries=(${(f)"$(command worktools complete pod --kind "$1" "${arguments[@]}" 2>/dev/null)"})
+  if [[ "$1" == actions ]]; then
+    entries+=('providers:Inspect available container providers' 'explain:Explain backend and planned command' 'actions:List selected provider operations')
+  fi
+  _describe "$1" entries
+}
+
 _worktools() {
   local context state line curcontext="$curcontext"
   local service="${service:-${words[1]}}"
   local -A opt_args
-  local -a commands names
+  local -a commands names pod_options worktools_original_words=("${words[@]}")
+  local -i worktools_original_current=$CURRENT
   local worktools_scope=--user worktools_directory='' worktools_dev_inspect=no
   if [[ "$service" == worktools ]]; then
     if (( CURRENT == 2 )); then
-      commands=('dev:Project development actions' 'svc:Services and timers' 'db:Project database connections' 'dots:Dotfiles inspection and editing')
+      commands=('pod:Project container operations' 'dev:Project development actions' 'svc:Services and timers' 'db:Project database connections' 'dots:Dotfiles inspection and editing')
       _describe 'tool' commands
       return
     fi
@@ -42,6 +68,11 @@ _worktools() {
   fi
   names=(shell git profile ghostty alacritty zed starship fonts mise)
   case "$service" in
+    pod)
+      pod_options=('--help[Show help]' '--directory[Working directory]:directory:_directories' '--provider[Select backend]:provider:{_worktools_pod_values providers}' '--file[Compose file]:file:_files' '--json[Structured inspection]' '--dry-run[Explain without execution]' '--pick[Choose interactively]')
+      _arguments -C "${pod_options[@]}" '1:operation:->pod-actions' '*::argument:->pod-args'
+      worktools_directory="${opt_args[--directory]}"
+      ;;
     dev)
       _arguments -C '--help[Show help]' '--directory[Project directory]:directory:_directories' '--json[Structured inspection output]' '--dry-run[Explain without executing]' '--pick[Choose an action; uses fzf if available]' '1:action:->dev-actions' '*::argument:->dev-args'
       worktools_directory="${opt_args[--directory]}"
@@ -62,6 +93,21 @@ _worktools() {
       ;;
   esac
   case "$state" in
+    pod-actions) _worktools_pod_values actions ;;
+    pod-args)
+      local pod_action="$line[1]"
+      words=("${worktools_original_words[@]}")
+      CURRENT=$worktools_original_current
+      if [[ "$words[1]" == worktools ]]; then
+        words=("${words[@]:1}")
+        (( CURRENT-- ))
+      fi
+      case "$pod_action" in
+        explain) _arguments "${pod_options[@]}" '1:operation:' '2:operation:{_worktools_pod_values actions}' ;;
+        providers|actions|services) _arguments "${pod_options[@]}" '1:operation:' ;;
+        *) _arguments "${pod_options[@]}" '1:operation:' '(-d --detach)'{-d,--detach}'[Start detached (up)]' '(-f --follow)'{-f,--follow}'[Follow output (logs)]' '*:service:{_worktools_pod_values services}' ;;
+      esac
+      ;;
     dev-actions) _worktools_dev_actions ;;
     dev-args)
       if [[ "$words[1]" == explain ]]; then

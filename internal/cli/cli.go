@@ -48,6 +48,9 @@ func parse(args []string, booleans, values []string) (options, error) {
 		if arg == "-n" {
 			arg = "--lines"
 		}
+		if arg == "-d" {
+			arg = "--detach"
+		}
 		if strings.HasPrefix(arg, "-") {
 			name, value, assigned := strings.Cut(arg, "=")
 			if name == "--help" || has(booleans, name) {
@@ -172,7 +175,7 @@ func Run(argv []string) int {
 	args := argv[1:]
 	if tool == "worktools" {
 		if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
-			fmt.Println("Usage: worktools <dev|svc|db|dots> [arguments]\nEach tool supports --help. Tools can also be invoked directly.")
+			fmt.Println("Usage: worktools <dev|pod|svc|db|dots> [arguments]\nEach tool supports --help. Tools can also be invoked directly.")
 			return 0
 		}
 		tool = args[0]
@@ -185,6 +188,8 @@ func Run(argv []string) int {
 		code, e = runComplete(args)
 	case "dev":
 		code, e = runDev(args)
+	case "pod":
+		code, e = runPod(args)
 	case "svc":
 		code, e = runSvc(args)
 	case "db":

@@ -8,7 +8,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --help|-h)
       echo 'Usage: ./install.sh [--prefix DIRECTORY] [--binary PREBUILT_FILE]'
-      echo 'Installs worktools, dev, svc, db, dots, and Zsh completion.'
+      echo 'Installs worktools, dev, pod, svc, db, dots, and Zsh completion.'
       exit 0 ;;
     --prefix|--binary)
       [[ $# -ge 2 ]] || { echo "Missing value for $1" >&2; exit 2; }
@@ -21,7 +21,7 @@ if [[ -n "$BINARY" ]]; then
   [[ -f "$BINARY" && -x "$BINARY" ]] || { echo 'Prebuilt binary must be an executable file' >&2; exit 2; }
   BINARY="$(cd "$(dirname "$BINARY")" && pwd)/$(basename "$BINARY")"
 fi
-names=(worktools dev svc db dots)
+names=(worktools dev pod svc db dots)
 destinations=()
 sources=()
 for name in "${names[@]}"; do
