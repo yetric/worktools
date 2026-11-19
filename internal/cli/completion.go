@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/yetric/worktools/internal/catalog"
 	"github.com/yetric/worktools/internal/dev"
 	"github.com/yetric/worktools/internal/pod"
 	"github.com/yetric/worktools/internal/pod/provider"
@@ -20,7 +21,45 @@ func runComplete(args []string) (int, error) {
 		return 0, e
 	}
 	if len(o.Pos) != 1 {
-		return 0, errors.New("usage: worktools complete <dev|pod|db|dots|svc> [--directory DIR] [--system]")
+		return 0, errors.New("usage: worktools complete <tools|dev|pod|db|dots|svc|agent> [--kind KIND] [--directory DIR]")
+	}
+	if o.Pos[0] == "tools" {
+		for _, tool := range catalog.Tools() {
+			fmt.Printf("%s:%s\n", tool.Name, tool.Description)
+		}
+		return 0, nil
+	}
+	if o.Values["--kind"] == "commands" {
+		tool, ok := catalog.Get(o.Pos[0])
+		if !ok {
+			return 0, errors.New("unknown completion tool")
+		}
+		for _, command := range tool.Commands {
+			fmt.Printf("%s:%s\n", command.Name, command.Description)
+		}
+		return 0, nil
+	}
+	if o.Pos[0] == "pod" && o.Values["--kind"] == "inspection" {
+		tool, _ := catalog.Get("pod")
+		for _, command := range tool.Commands {
+			if command.Name == "providers" || command.Name == "actions" || command.Name == "explain" {
+				fmt.Printf("%s:%s\n", command.Name, command.Description)
+			}
+		}
+		return 0, nil
+	}
+	if o.Pos[0] == "agent" {
+		switch o.Values["--kind"] {
+		case "tools":
+			for _, tool := range catalog.Selectable() {
+				fmt.Printf("%s:%s\n", tool.Name, tool.Description)
+			}
+		case "files":
+			fmt.Println("AGENTS.md\nCLAUDE.md")
+		default:
+			return 0, errors.New("agent completion requires --kind commands, tools or files")
+		}
+		return 0, nil
 	}
 	directory := o.Values["--directory"]
 	if directory == "" {

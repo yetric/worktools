@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/yetric/worktools/internal/catalog"
 )
 
 func configHome() string {
@@ -60,7 +62,7 @@ func runSvc(args []string) (int, error) {
 		return 0, e
 	}
 	if o.Flags["--help"] {
-		fmt.Println("Usage: svc [--system] ACTION [UNIT] [OPTIONS]\n\nActions: list, status, start, stop, restart, logs, timers, failed\nDefaults to user units. --system explicitly selects system units.\nInspection: --json. list --aliases inspects configured aliases offline.\nLogs: --follow/-f, --lines/-n COUNT, --since TIME, --json.\nAliases: $XDG_CONFIG_HOME/worktools/services.json.")
+		fmt.Print(catalog.Help("svc"))
 		return 0, nil
 	}
 	if len(o.Native) > 0 {

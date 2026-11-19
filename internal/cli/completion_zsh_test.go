@@ -22,6 +22,12 @@ func TestZshCompletionContexts(t *testing.T) {
 		t.Fatal(e)
 	}
 	for _, tc := range []struct{ name, input, want, discovery string }{
+		{"root-agent", "worktools ag", "worktools agent", "complete\ntools"},
+		{"agent-action", "worktools agent pr", "worktools agent preview", "commands"},
+		{"agent-tool", "worktools agent preview --tools de", "worktools agent preview --tools dev", "tools"},
+		{"agent-tool-list", "worktools agent preview --tools dev,po", "worktools agent preview --tools dev,pod", "tools"},
+		{"agentsetup-tool", "agentsetup --tools de", "agentsetup --tools dev", "tools"},
+		{"agent-file", "worktools agent preview --files CL", "worktools agent preview --files CLAUDE.md", ""},
 		{"dev-explain", "dev explain te", "dev explain test", "complete\ndev"},
 		{"nested-dev", "worktools dev explain te", "worktools dev explain test", "complete\ndev"},
 		{"dev-directory", "dev --directory '/project with spaces' explain te", "dev --directory '/project with spaces' explain test", "--directory\n/project with spaces"},
@@ -47,6 +53,13 @@ func TestZshCompletionContexts(t *testing.T) {
 			write(t, bin, "worktools", `#!/bin/sh
 printf '%s\n' "$@" >> "$CALL_CAPTURE"
 case "$1 $2" in
+  'complete tools') printf 'dev:Development\npod:Containers\nagent:Agent onboarding\n' ;;
+  'complete agent')
+    case "$4" in
+      commands) printf 'init:Choose tools\npreview:Preview changes\nsync:Update instructions\n' ;;
+      tools) printf 'dev:Development\npod:Containers\n' ;;
+      files) printf 'AGENTS.md\nCLAUDE.md\n' ;;
+    esac ;;
   'complete dev') printf 'test:Run tests\nbuild:Build project\n' ;;
   'complete svc') printf 'redis.service\n' ;;
   'complete db') printf 'primary\n' ;;
@@ -65,7 +78,7 @@ stty rows 24 columns 120
 fpath=("$COMPLETION_DIR" $fpath)
 autoload -Uz compinit
 compinit -u -D
-compdef _worktools worktools dev pod svc db dots
+compdef _worktools worktools dev pod svc db dots agentsetup
 zstyle ':completion:*' menu no
 bindkey -e
 capture-buffer() { print -r -- "$BUFFER" > "$BUFFER_CAPTURE" }

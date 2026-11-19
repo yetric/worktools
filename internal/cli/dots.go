@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/yetric/worktools/internal/catalog"
 )
 
 var dotPaths = map[string]string{"shell": ".zshrc", "git": ".gitconfig", "profile": ".profile", "ghostty": ".config/ghostty/config", "alacritty": ".config/alacritty/alacritty.toml", "zed": ".config/zed/settings.json", "starship": ".config/starship.toml", "fonts": ".config/fontconfig/fonts.conf", "mise": ".config/mise/config.toml"}
@@ -175,7 +176,7 @@ func runDots(args []string) (int, error) {
 		return 0, e
 	}
 	if o.Flags["--help"] {
-		fmt.Println("Usage: dots [list|show NAME|edit NAME|check [NAME]|diff [NAME]] [--json]\n\nlist/show: inspect configuration paths and symlink sources.\nedit: open the actual source using VISUAL, EDITOR, or vi; --pick selects a name.\ncheck: check links, TOML, fontconfig XML, and Zsh syntax; exits 1 on issues.\ndiff: show tracked Git working-tree changes.\nDOTFILES selects the checkout (default ~/dotfiles). No automatic relinking.")
+		fmt.Print(catalog.Help("dots"))
 		return 0, nil
 	}
 	if len(o.Native) > 0 || len(o.Pos) > 2 {

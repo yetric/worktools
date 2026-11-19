@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
+	"github.com/yetric/worktools/internal/catalog"
 	"github.com/yetric/worktools/internal/dev"
 	"github.com/yetric/worktools/internal/pod"
 	"github.com/yetric/worktools/internal/pod/provider"
@@ -46,44 +47,7 @@ func runPod(args []string) (int, error) {
 		return 0, e
 	}
 	if o.Flags["--help"] {
-		fmt.Print(`Usage: pod [OPTIONS] ACTION [ARGS...] [-- NATIVE_ARGS...]
-
-Project operations (Compose):
-  up          Create and start services (--detach runs in the background)
-  down        Stop and remove project containers and networks
-  ps          List this project's containers
-  logs        Read service logs (--follow streams new entries)
-  exec        Run a command inside a service: pod exec app -- sh
-  restart     Restart project services
-  build       Build service images
-  services    List configured service names
-
-Across projects (selected engine/context):
-  containers  Compact list of running containers; --all includes stopped ones
-
-Inspection:
-  providers   Installed backends and their Compose support
-  actions     Operations supported by the selected backend
-  explain     Show backend, scope and command: pod explain up --json
-
-Options:
-  --provider NAME   docker, podman, or nerdctl
-  --directory DIR   Working directory
-  --file FILE       Override Compose files for project operations
-  -d, --detach      Run up in the background
-  -f, --follow      Follow logs
-  -a, --all         Include stopped containers (containers only)
-  --dry-run         Explain a command without running it
-  --json            Structured inspection, services, or container summaries
-  --pick            Choose an operation interactively
-
-Bare pod opens a picker in a terminal; otherwise it defaults to project ps.
-Pass native flags after --: pod containers -- --filter name=app
-
-Selection: --provider > WORKTOOLS_POD_PROVIDER > project [pod] provider >
-user worktools/config.toml > sole installed backend. Explicit choices never fall back.
-Native context and environment are inherited; no automatic engine/VM startup.
-`)
+		fmt.Print(catalog.Help("pod"))
 		return 0, nil
 	}
 	action := "ps"

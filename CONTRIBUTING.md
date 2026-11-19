@@ -1,5 +1,10 @@
 # Contributing providers
 
+Command-family descriptions, public action examples, help and completion live in
+`internal/catalog`. Agent instruction generation consumes the same records and
+static project discovery. Keep provider discovery free of command execution:
+onboarding and preview must not invoke project scripts or connect to services.
+
 Worktools grows through independent, compiled Go providers. Adding another
 environment should not require learning or modifying the picker, CLI parser,
 completion, or process execution code.

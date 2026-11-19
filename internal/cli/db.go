@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/yetric/worktools/internal/catalog"
 )
 
 type connection struct {
@@ -156,7 +158,7 @@ func runDB(args []string) (int, error) {
 		return 0, e
 	}
 	if o.Flags["--help"] {
-		fmt.Println("Usage: db [--directory DIR] [list|info [NAME]|connect [NAME]|query [NAME] --file SQL] [--json]\n\nConfigure project .db.json with a default and named connections.\nExample: {\"default\":\"app\",\"connections\":{\"app\":{\"engine\":\"postgres\",\"url_env\":\"DATABASE_URL\"}}}\nEngines: postgres, mysql, sqlite. SQLite uses file instead of url_env.\nlist/info inspect metadata without connecting or displaying credentials.\nconnect --pick selects a connection; otherwise uses explicit or sole default.\nEnvironment variables must already be exported; .env files are never sourced.")
+		fmt.Print(catalog.Help("db"))
 		return 0, nil
 	}
 	if len(o.Native) > 0 || len(o.Pos) > 2 {

@@ -1,7 +1,7 @@
 # Worktools
 
 Small command families for humans and coding agents: `dev`, `pod`,
-`agent` (planned), `svc`, `db`, and `dots`. Fewer aliases, discoverable actions,
+`worktools agent`, `svc`, `db`, and `dots`. Fewer aliases, discoverable actions,
 Zsh completion, optional pickers, and structured inspection output.
 
 Worktools is written in Go and builds to one binary. Linux is currently supported.
@@ -296,6 +296,54 @@ when Zsh is installed. Optional configs that are absent count as issues; select
 specific names when appropriate. `edit` honors `VISUAL`, then `EDITOR`, then `vi`,
 with simple quoted arguments and no shell expansion. It edits the actual source.
 `diff` delegates to Git's tracked working-tree diff. No automatic relinking.
+
+## Agent instructions
+
+```sh
+worktools agent init                         # Guided onboarding with a diff and confirmation
+worktools agent preview                      # Read-only diff using saved selections
+worktools agent preview --json               # Structured plan for automation
+worktools agent preview --check              # Exit 1 if changes are pending
+worktools agent sync                         # Apply the managed updates
+worktools agent sync --tools dev,pod --files AGENTS.md --json
+```
+
+Use `--directory DIR` or an optional directory after the action. `init` requires
+a terminal, uses an fzf multi-select picker when available, and falls back to
+numbered checkboxes. Tab toggles choices in fzf; Enter continues; Escape cancels.
+The guide shows the complete diff before asking to write it. Bare `worktools agent`
+opens the guide in a terminal and previews in noninteractive use. No short `agent`
+executable is installed.
+
+Tool and file selections are saved in the project and can be committed:
+
+```toml
+# .worktools/agent.toml
+version = 1
+tools = ["dev", "pod"]
+files = ["AGENTS.md", "CLAUDE.md"]
+```
+
+The initial selection includes all five tool families and both instruction files;
+the guide and `--tools`/`--files` narrow it. Help, completion and generated command
+descriptions share a Go catalog. Detected development actions and declared runner/
+container preferences are included from static project discovery. Onboarding
+does not execute project commands, inspect running engines, connect to services,
+or copy credentials, environment values, or resolved command arguments.
+
+Generated text lives between `worktools:commands` markers. Handwritten bytes outside
+the markers, existing permissions, and CRLF line endings are preserved. Shared
+instruction symlinks inside the selected directory are updated once. External or
+dangling symlinks, hard links, malformed markers, conflicting settings and edits
+made since preview are rejected before writing. All files are validated and staged
+before replacement. No-op syncs do not rewrite files. Deselecting an instruction
+file removes only its managed section, leaving the file and handwritten content.
+
+Legacy `dotfiles-aliases` blocks are migrated to the selected Worktools families;
+the old dotfiles Python script and shell-alias parsing are not needed. `preview`
+never creates files or directories. `sync` explicitly writes the proposed files
+and selections without a prompt; use `preview` first when review is needed.
+`--json` is available for preview and sync; `init` remains interactive.
 
 ## Shell experience and automation
 

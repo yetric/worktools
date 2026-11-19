@@ -2,6 +2,7 @@
 package dev
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -15,6 +16,8 @@ import (
 
 type Action = provider.Action
 type Adapter = provider.Provider
+
+var ErrNoProject = errors.New("no supported project manifest or .worktools.toml found")
 
 type Record struct {
 	Name                string   `json:"name"`
@@ -61,7 +64,7 @@ func Root(directory string, adapters []Adapter) (string, error) {
 	if nearest != "" {
 		return nearest, nil
 	}
-	return "", fmt.Errorf("no supported project manifest or .worktools.toml found")
+	return "", ErrNoProject
 }
 
 type mapping struct {

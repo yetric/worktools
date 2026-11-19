@@ -1,10 +1,10 @@
-#compdef worktools dev pod svc db dots
+#compdef worktools dev pod svc db dots agentsetup
 
 _worktools_dev_actions() {
   local -a actions directory_args
   [[ -n "$worktools_directory" ]] && directory_args=(--directory "$worktools_directory")
   actions=(${(f)"$(command worktools complete dev "${directory_args[@]}" 2>/dev/null)"})
-  [[ "$worktools_dev_inspect" != yes ]] && actions+=('list:List available project actions' 'explain:Explain how an action is resolved')
+  [[ "$worktools_dev_inspect" != yes ]] && actions+=(${(f)"$(command worktools complete dev --kind commands 2>/dev/null)"})
   _describe 'project action' actions
 }
 
@@ -44,21 +44,44 @@ _worktools_pod_values() {
   done
   entries=(${(f)"$(command worktools complete pod --kind "$1" "${arguments[@]}" 2>/dev/null)"})
   if [[ "$1" == actions ]]; then
-    entries+=('providers:Inspect available container providers' 'explain:Explain backend and planned command' 'actions:List selected provider operations')
+    entries+=(${(f)"$(command worktools complete pod --kind inspection 2>/dev/null)"})
   fi
   _describe "$1" entries
+}
+
+_worktools_commands() {
+  local -a entries
+  entries=(${(f)"$(command worktools complete "$service" --kind commands 2>/dev/null)"})
+  _describe 'action' entries
+}
+
+_worktools_agent_tools() {
+  local -a entries
+  entries=(${(f)"$(command worktools complete agent --kind tools 2>/dev/null)"})
+  _describe 'tool' entries
+}
+
+_worktools_agent_files() {
+  local -a entries
+  entries=(${(f)"$(command worktools complete agent --kind files 2>/dev/null)"})
+  _describe 'instruction file' entries
 }
 
 _worktools() {
   local context state line curcontext="$curcontext"
   local service="${service:-${words[1]}}"
+  if [[ "$service" == agentsetup ]]; then
+    service=worktools
+    words=(worktools agent init "${words[@]:1}")
+    (( CURRENT += 2 ))
+  fi
   local -A opt_args
   local -a commands names pod_options worktools_original_words=("${words[@]}")
   local -i worktools_original_current=$CURRENT
   local worktools_scope=--user worktools_directory='' worktools_dev_inspect=no
   if [[ "$service" == worktools ]]; then
     if (( CURRENT == 2 )); then
-      commands=('pod:Containers and Compose projects' 'dev:Project development actions' 'svc:Services and timers' 'db:Project database connections' 'dots:Dotfiles inspection and editing')
+      commands=(${(f)"$(command worktools complete tools 2>/dev/null)"})
       _describe 'tool' commands
       return
     fi
@@ -68,6 +91,9 @@ _worktools() {
   fi
   names=(shell git profile ghostty alacritty zed starship fonts mise)
   case "$service" in
+    agent)
+      _arguments -C '--help[Show help]' '--directory=[Project directory]:directory:_directories' '--tools=[Comma-separated tools]:tools:{_sequence -s , _worktools_agent_tools}' '--files=[Comma-separated targets]:files:{_sequence -s , _worktools_agent_files}' '--json[Structured plan or result (preview/sync)]' '--check[Exit 1 if preview finds changes]' '1:action:_worktools_commands' '2:project directory:_directories'
+      ;;
     pod)
       local pod_action_hint='' pod_word
       local -i pod_index
@@ -101,17 +127,14 @@ _worktools() {
       worktools_directory="${(Q)opt_args[--directory]}"
       ;;
     svc)
-      commands=('list:List services' 'status:Inspect a unit' 'start:Start a unit' 'stop:Stop a unit' 'restart:Restart a unit' 'logs:Read unit logs' 'timers:List timers' 'failed:List failed units')
       _arguments -C '--help[Show help]' '--system[Use system units]' '1:action:->commands' '*::argument:->args'
       [[ -n "${opt_args[--system]}" ]] && worktools_scope=--system
       ;;
     db)
-      commands=('list:List configured connections' 'info:Inspect a connection' 'connect:Open the native client' 'query:Execute a SQL file')
       _arguments -C '--help[Show help]' '--directory=[Project directory]:directory:_directories' '1:action:->commands' '*::argument:->args'
       worktools_directory="${(Q)opt_args[--directory]}"
       ;;
     dots)
-      commands=('list:List configuration paths' 'show:Inspect a configuration' 'edit:Edit the actual source' 'check:Check links and supported syntax' 'diff:Show Git changes')
       _arguments -C '--help[Show help]' '1:action:->commands' '*::argument:->args'
       ;;
   esac
@@ -148,7 +171,7 @@ _worktools() {
         _arguments '--help[Show help]' '--dry-run[Explain without executing]' '--json[Structured dry-run output]' '--pick[Choose an action; uses fzf if available]' '--directory=[Project directory]:directory:_directories' '1:action:' '*:runner argument:_files'
       fi
       ;;
-    commands) _describe 'action' commands ;;
+    commands) _worktools_commands ;;
     args)
       case "$service:$worktools_action" in
         svc:logs) _arguments '1:action:' '--help[Show help]' '--system[Use system units]' '--json[JSON lines]' '(-f --follow)'{-f,--follow}'[Follow new entries]' '(-n --lines)'{-n,--lines}'[Number of entries]:lines:' '--since=[Show entries since]:time:' '2:unit:_worktools_units' ;;

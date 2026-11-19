@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"unsafe"
 
+	"github.com/yetric/worktools/internal/catalog"
 	"github.com/yetric/worktools/internal/dev"
 )
 
@@ -178,7 +179,11 @@ func Run(argv []string) int {
 	args := argv[1:]
 	if tool == "worktools" {
 		if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
-			fmt.Println("Usage: worktools <dev|pod|svc|db|dots> [arguments]\nEach tool supports --help. Tools can also be invoked directly.")
+			fmt.Println("Usage: worktools TOOL [arguments]\n\nTools:")
+			for _, tool := range catalog.Tools() {
+				fmt.Printf("  %-7s %s\n", tool.Name, tool.Description)
+			}
+			fmt.Println("\nEach tool supports --help. dev, pod, svc, db and dots also have short entry points.")
 			return 0
 		}
 		tool = args[0]
@@ -189,6 +194,8 @@ func Run(argv []string) int {
 	switch tool {
 	case "complete":
 		code, e = runComplete(args)
+	case "agent":
+		code, e = runAgent(args)
 	case "dev":
 		code, e = runDev(args)
 	case "pod":
@@ -240,7 +247,7 @@ func runDev(args []string) (int, error) {
 		return 0, e
 	}
 	if o.Flags["--help"] {
-		fmt.Println("Usage: dev [--directory DIR] [ACTION | list | explain ACTION] [--json] [--dry-run] [--pick] [-- RUNNER_ARGS...]\n\nBare dev opens an action picker in a terminal; noninteractive use defaults to start.\nNamed actions run directly. list and explain inspect project actions without running them.\nSupports Make, JavaScript, Composer, Go, Rust, Java, and Python tooling.\nProject overrides: .worktools.toml. Runner arguments must follow --.")
+		fmt.Print(catalog.Help("dev"))
 		return 0, nil
 	}
 	name := "start"
