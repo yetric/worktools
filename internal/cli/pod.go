@@ -1,10 +1,12 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"github.com/yetric/worktools/internal/dev"
@@ -25,6 +27,10 @@ func podSettings(o options) (string, pod.Config, error) {
 	if e != nil {
 		return "", config, e
 	}
+	config.DefaultProvider, e = pod.LoadDefaultProvider()
+	if e != nil {
+		return "", config, e
+	}
 	if file := o.Values["--file"]; file != "" {
 		file = expandHome(file)
 		if !filepath.IsAbs(file) {
@@ -35,12 +41,49 @@ func podSettings(o options) (string, pod.Config, error) {
 	return directory, config, nil
 }
 func runPod(args []string) (int, error) {
-	o, e := parse(args, []string{"--json", "--dry-run", "--pick", "--detach", "--follow"}, []string{"--directory", "--provider", "--file"})
+	o, e := parse(args, []string{"--json", "--dry-run", "--pick", "--detach", "--follow", "--all"}, []string{"--directory", "--provider", "--file"})
 	if e != nil {
 		return 0, e
 	}
 	if o.Flags["--help"] {
-		fmt.Println("Usage: pod [--provider NAME] [--directory DIR] [--file FILE] ACTION [ARGS...] [-- NATIVE_ARGS...]\n\nActions: up, down, ps, logs, exec, restart, build, services\nInspection: providers [--json], actions [--json], explain [ACTION] [--json]\nBare pod opens an action picker in a terminal; otherwise it lists project containers.\n--dry-run explains a command without running it. --pick explicitly opens a picker.\nCommon flags: up --detach; logs --follow. Other native flags follow --.\nExample: pod exec app -- sh -c 'echo hello'\nProvider precedence: --provider, WORKTOOLS_POD_PROVIDER, [pod] provider, sole available provider.\nContext/endpoint environment is inherited. No automatic daemon/VM startup or context switching.")
+		fmt.Print(`Usage: pod [OPTIONS] ACTION [ARGS...] [-- NATIVE_ARGS...]
+
+Project operations (Compose):
+  up          Create and start services (--detach runs in the background)
+  down        Stop and remove project containers and networks
+  ps          List this project's containers
+  logs        Read service logs (--follow streams new entries)
+  exec        Run a command inside a service: pod exec app -- sh
+  restart     Restart project services
+  build       Build service images
+  services    List configured service names
+
+Across projects (selected engine/context):
+  containers  Compact list of running containers; --all includes stopped ones
+
+Inspection:
+  providers   Installed backends and their Compose support
+  actions     Operations supported by the selected backend
+  explain     Show backend, scope and command: pod explain up --json
+
+Options:
+  --provider NAME   docker, podman, or nerdctl
+  --directory DIR   Working directory
+  --file FILE       Override Compose files for project operations
+  -d, --detach      Run up in the background
+  -f, --follow      Follow logs
+  -a, --all         Include stopped containers (containers only)
+  --dry-run         Explain a command without running it
+  --json            Structured inspection, services, or container summaries
+  --pick            Choose an operation interactively
+
+Bare pod opens a picker in a terminal; otherwise it defaults to project ps.
+Pass native flags after --: pod containers -- --filter name=app
+
+Selection: --provider > WORKTOOLS_POD_PROVIDER > project [pod] provider >
+user worktools/config.toml > sole installed backend. Explicit choices never fall back.
+Native context and environment are inherited; no automatic engine/VM startup.
+`)
 		return 0, nil
 	}
 	action := "ps"
@@ -87,7 +130,7 @@ func runPod(args []string) (int, error) {
 			}
 		}
 		if len(choices) == 0 {
-			return 0, errors.New("no available Compose provider; use pod providers")
+			return 0, errors.New("no available container provider; use pod providers")
 		}
 		selected := choices[0].Value
 		if len(choices) > 1 {
@@ -154,7 +197,27 @@ func runPod(args []string) (int, error) {
 		arguments = append([]string{"--follow"}, arguments...)
 	}
 	arguments = append(arguments, o.Native...)
+	if o.Flags["--all"] {
+		if action != "containers" {
+			return 0, errors.New("--all is supported for containers; pass other native flags after --")
+		}
+		arguments = append([]string{"--all"}, arguments...)
+	}
 	request := provider.Request{Action: action, Directory: directory, Files: config.Files, Arguments: arguments}
+	if action == "containers" {
+		if o.Values["--file"] != "" {
+			return 0, errors.New("--file applies to Compose project operations, not containers")
+		}
+		request.Files = nil
+		request.JSON = o.Flags["--json"]
+		posCount := 1
+		if len(o.Pos) > 0 && o.Pos[0] == "explain" {
+			posCount = 2
+		}
+		if len(o.Pos) > posCount {
+			return 0, errors.New("containers does not take names; pass native filters after --")
+		}
+	}
 	plan, e := p.Plan(info, request)
 	if e != nil {
 		return 0, e
@@ -168,7 +231,10 @@ func runPod(args []string) (int, error) {
 		if o.Flags["--json"] {
 			return 0, emit(result, true)
 		}
-		fmt.Printf("provider: %s (%s)\ncompose provider: %s\ncontext: %s\ndirectory: %s\ncommand: %s\n", plan.Provider, source, plan.ComposeProvider, singleLine(plan.Context), plan.Directory, commandString(plan.Command))
+		fmt.Printf("provider: %s (%s)\nscope: %s\ncontext: %s\ndirectory: %s\ncommand: %s\n", plan.Provider, source, plan.Scope, singleLine(plan.Context), plan.Directory, commandString(plan.Command))
+		if plan.ComposeProvider != "" {
+			fmt.Printf("compose provider: %s\n", plan.ComposeProvider)
+		}
 		if plan.EndpointEnvironment != "" {
 			fmt.Printf("endpoint: %s\n", plan.EndpointEnvironment)
 		}
@@ -190,8 +256,27 @@ func runPod(args []string) (int, error) {
 		}
 		return 0, nil
 	}
+	if action == "containers" && o.Flags["--json"] {
+		command := exec.Command(plan.Command[0], plan.Command[1:]...)
+		command.Dir = plan.Directory
+		command.Stderr = os.Stderr
+		output, e := command.Output()
+		if e != nil {
+			return 0, e
+		}
+		rows, e := pod.DecodeContainers(bytes.NewReader(output))
+		if e != nil {
+			return 0, e
+		}
+		return 0, emit(struct {
+			Provider   string          `json:"provider"`
+			Scope      string          `json:"scope"`
+			Context    string          `json:"context"`
+			Containers []pod.Container `json:"containers"`
+		}{plan.Provider, plan.Scope, plan.Context, rows}, true)
+	}
 	if o.Flags["--json"] {
-		return 0, errors.New("--json is for providers/actions/services/explain or dry-run; native output flags follow --")
+		return 0, errors.New("--json is for providers/actions/services/containers/explain or dry-run; native output flags follow --")
 	}
 	if action == "exec" && len(arguments) < 2 {
 		return 0, errors.New("usage: pod exec SERVICE COMMAND [ARGS...]")

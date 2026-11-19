@@ -144,6 +144,9 @@ contribute a compiled adapter.
 ```sh
 pod providers --json          # Inspect Docker, Podman, and nerdctl availability
 pod --provider podman ps
+pod containers                # Across projects: names, status, ports
+pod containers --all          # Include stopped containers
+pod containers --json         # Consistent summary for agents and scripts
 pod up --detach
 pod logs app --follow
 pod exec app -- sh
@@ -152,14 +155,29 @@ pod explain up --json         # Show selected backend and exact argument array
 pod down --dry-run
 ```
 
-Each backend is an independent, compiled provider. Operations use its Compose
+Each backend is an independent, compiled provider. Project operations use its Compose
 interface: `up`, `down`, `ps`, `logs`, `exec`, `restart`, `build`, and `services`.
 `pod` opens an operation picker in a terminal; otherwise it defaults to `ps`.
 Native flags follow `--`, for example `pod up -- --build`. Arguments, working
 directory, native contexts, and environment are preserved.
 
+`containers` runs the selected engine's native `ps` without requiring Compose or
+a project manifest. It lists across projects in the current engine/context/namespace;
+`pod ps` lists only the Compose project. Native filters and output overrides work
+after `--`: `pod containers -- --filter name=app`, `-- --quiet`, or
+`-- --format TEMPLATE`. Configured Compose files do not affect `containers`;
+explicit `--file` is rejected to prevent accidental scope confusion.
+
+`containers --json` returns one object with `provider`, `scope`, `context`, and
+`containers`. Each summary has `id` (full ID), `name`, `status`, and `ports` strings;
+an empty engine returns `containers: []`. Status and ports retain native display
+text; they are not normalized state enums or parsed port mappings. No container
+command, environment, or labels are included. Native filters work with JSON;
+native `--format`/`--quiet` conflict with it and are rejected. Engine errors retain
+their native exit code and do not produce a partial JSON result.
+
 Selection order is `--provider`, `WORKTOOLS_POD_PROVIDER`, project configuration,
-then the sole available provider. Multiple available providers require a choice;
+personal default, then the sole available provider. Multiple available providers require a choice;
 the interactive picker can make a temporary choice. An explicit choice never
 falls back to another engine. Optional project configuration:
 
@@ -170,11 +188,18 @@ provider = "podman"
 files = ["compose.yaml", "compose.dev.yaml"]
 ```
 
+A personal default uses `[pod] provider = "podman"` in
+`$XDG_CONFIG_HOME/worktools/config.toml` (normally `~/.config/worktools/config.toml`).
+Project preferences override this default. Explicit unavailable choices never fall
+back. `pod providers --json` reports CLI presence in `available`, Compose in
+`compose_available`, and supported operations in `operations`. A CLI without Compose
+can still list containers; project operations are absent from its picker/completion.
+
 Configuration is found in parent directories up to the Git boundary. `--file FILE`
 overrides configured files; otherwise Compose performs native file discovery from
 the working directory, including `COMPOSE_FILE`. Podman uses `podman compose` and
-honors its configured external Compose provider. Availability verifies the CLI
-and Compose command, not daemon readiness. Worktools never starts VMs/daemons or
+honors its configured external Compose provider. Detection checks executable presence
+and Compose support, not daemon readiness. Worktools never starts VMs/daemons or
 switches contexts automatically. Service completion runs read-only
 `compose config --services`; inspection does not print endpoint credentials.
 
@@ -308,4 +333,5 @@ zsh -n completions/_worktools
 
 Or use `dev test` and `dev check` in this repository. Tests use temporary projects,
 fake clients, and child processes; they do not connect to databases or mutate
-services. MIT licensed.
+services. Completion regression tests drive real Zsh widgets in isolated
+pseudo-terminals when Zsh is installed; CI installs Zsh to run them. MIT licensed.

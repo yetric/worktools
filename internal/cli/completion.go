@@ -28,6 +28,11 @@ func runComplete(args []string) (int, error) {
 	}
 	switch o.Pos[0] {
 	case "pod":
+		switch o.Values["--kind"] {
+		case "", "actions", "operations", "providers", "services":
+		default:
+			return 0, errors.New("unknown pod completion kind")
+		}
 		directory, config, e := podSettings(o)
 		if e != nil {
 			return 0, e

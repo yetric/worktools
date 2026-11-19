@@ -29,9 +29,30 @@ func (p NativeProbe) Run(ctx context.Context, argv ...string) ([]byte, error) {
 }
 
 type Config struct {
-	Provider   string   `toml:"provider"`
-	Files      []string `toml:"files"`
-	ConfigFile string   `toml:"-"`
+	Provider        string   `toml:"provider"`
+	Files           []string `toml:"files"`
+	ConfigFile      string   `toml:"-"`
+	DefaultProvider string   `toml:"-"`
+}
+
+func LoadDefaultProvider() (string, error) {
+	directory, e := os.UserConfigDir()
+	if e != nil {
+		return "", e
+	}
+	file := filepath.Join(directory, "worktools", "config.toml")
+	var value struct {
+		Pod struct {
+			Provider string `toml:"provider"`
+		} `toml:"pod"`
+	}
+	if _, e = toml.DecodeFile(file, &value); e != nil {
+		if os.IsNotExist(e) {
+			return "", nil
+		}
+		return "", fmt.Errorf("user container configuration: %w", e)
+	}
+	return value.Pod.Provider, nil
 }
 
 func LoadConfig(directory string) (Config, error) {
@@ -83,6 +104,9 @@ func Preference(cli string, config Config, env string) (string, string) {
 	if config.Provider != "" {
 		return config.Provider, "project .worktools.toml"
 	}
+	if config.DefaultProvider != "" {
+		return config.DefaultProvider, "user worktools/config.toml"
+	}
 	return "", "only available provider"
 }
 func Inspect(ctx context.Context, registry []provider.Provider, probe provider.Probe) []provider.Info {
@@ -116,7 +140,7 @@ func Select(ctx context.Context, registry []provider.Provider, probe provider.Pr
 		}
 	}
 	if len(available) == 0 {
-		return nil, provider.Info{}, errors.New("no available Compose provider; use pod providers for details")
+		return nil, provider.Info{}, errors.New("no available container provider; use pod providers for details")
 	}
 	if len(available) > 1 {
 		names := []string{}

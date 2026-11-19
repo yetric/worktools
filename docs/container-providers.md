@@ -21,6 +21,17 @@ availability. Do not start a daemon or VM, change contexts, create resources, or
 execute project scripts during detection. Native probes have bounded timeouts.
 Availability does not guarantee that an engine is running.
 
+`Info.Available` indicates CLI presence; `Info.ComposeAvailable` separately records
+Compose support. Advertise `containers` for an installed engine and add project
+operations only after successful Compose detection. Keep context metadata available
+in both cases. `provider.ContainerPlan` implements the common native `ps` layout
+with compact output, independent of `provider.ComposePlan`. Plans report `engine`
+or `project` in `Scope`, making the distinction visible to agents and inspection.
+Container JSON uses a portable template with only ID, name, status, and ports.
+Providers with different layouts must return equivalent summaries without
+including commands, labels, or environment values. Tests cover empty/malformed
+output, exact argument forwarding, and native failure status.
+
 `Info.Operations` explicitly lists supported operations and descriptions. `Plan`
 returns an argument array and working directory without executing anything.
 Unsupported operations must fail clearly. Providers with Compose-compatible

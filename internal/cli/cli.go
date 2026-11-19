@@ -51,6 +51,9 @@ func parse(args []string, booleans, values []string) (options, error) {
 		if arg == "-d" {
 			arg = "--detach"
 		}
+		if arg == "-a" {
+			arg = "--all"
+		}
 		if strings.HasPrefix(arg, "-") {
 			name, value, assigned := strings.Cut(arg, "=")
 			if name == "--help" || has(booleans, name) {

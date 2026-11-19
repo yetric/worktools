@@ -31,12 +31,12 @@ _worktools_pod_values() {
   # _arguments shifts words for subcommands. Keep global options on either side
   # of the operation when completing service names, stopping at native arguments.
   for (( index = 2; index <= ${#worktools_original_words}; index++ )); do
-    word="$worktools_original_words[index]"
+    word="${(Q)worktools_original_words[index]}"
     [[ "$word" == -- ]] && break
     case "$word" in
       --directory|--provider|--file)
         (( index++ ))
-        next="$worktools_original_words[index]"
+        next="${(Q)worktools_original_words[index]}"
         [[ -n "$next" ]] && arguments+=("$word" "$next")
         ;;
       --directory=*|--provider=*|--file=*) arguments+=("$word") ;;
@@ -58,7 +58,7 @@ _worktools() {
   local worktools_scope=--user worktools_directory='' worktools_dev_inspect=no
   if [[ "$service" == worktools ]]; then
     if (( CURRENT == 2 )); then
-      commands=('pod:Project container operations' 'dev:Project development actions' 'svc:Services and timers' 'db:Project database connections' 'dots:Dotfiles inspection and editing')
+      commands=('pod:Containers and Compose projects' 'dev:Project development actions' 'svc:Services and timers' 'db:Project database connections' 'dots:Dotfiles inspection and editing')
       _describe 'tool' commands
       return
     fi
@@ -69,13 +69,36 @@ _worktools() {
   names=(shell git profile ghostty alacritty zed starship fonts mise)
   case "$service" in
     pod)
-      pod_options=('--help[Show help]' '--directory[Working directory]:directory:_directories' '--provider[Select backend]:provider:{_worktools_pod_values providers}' '--file[Compose file]:file:_files' '--json[Structured inspection]' '--dry-run[Explain without execution]' '--pick[Choose interactively]')
+      local pod_action_hint='' pod_word
+      local -i pod_index
+      for (( pod_index = 2; pod_index < CURRENT; pod_index++ )); do
+        pod_word="${(Q)words[pod_index]}"
+        case "$pod_word" in
+          --) break ;;
+          --directory|--provider|--file) (( pod_index++ )) ;;
+          -*) ;;
+          *) pod_action_hint="$pod_word"; break ;;
+        esac
+      done
+      pod_options=('--help[Show help]' '--directory=[Working directory]:directory:_directories' '--provider=[Select backend]:provider:{_worktools_pod_values providers}' '--json[Structured inspection]')
+      case "$pod_action_hint" in
+        providers|actions) ;;
+        containers) pod_options+=('--dry-run[Explain without execution]' '--pick[Choose interactively]' '(-a --all)'{-a,--all}'[Include stopped containers]') ;;
+        *)
+          pod_options+=('--file=[Compose file]:file:_files' '--dry-run[Explain without execution]' '--pick[Choose interactively]')
+          case "$pod_action_hint" in
+            up) pod_options+=('(-d --detach)'{-d,--detach}'[Start in the background]') ;;
+            logs) pod_options+=('(-f --follow)'{-f,--follow}'[Follow log output]') ;;
+            explain|'') pod_options+=('(-a --all)'{-a,--all}'[Include stopped containers (containers)]' '(-d --detach)'{-d,--detach}'[Start in the background (up)]' '(-f --follow)'{-f,--follow}'[Follow log output (logs)]') ;;
+          esac
+          ;;
+      esac
       _arguments -C "${pod_options[@]}" '1:operation:->pod-actions' '*::argument:->pod-args'
-      worktools_directory="${opt_args[--directory]}"
+      worktools_directory="${(Q)opt_args[--directory]}"
       ;;
     dev)
-      _arguments -C '--help[Show help]' '--directory[Project directory]:directory:_directories' '--json[Structured inspection output]' '--dry-run[Explain without executing]' '--pick[Choose an action; uses fzf if available]' '1:action:->dev-actions' '*::argument:->dev-args'
-      worktools_directory="${opt_args[--directory]}"
+      _arguments -C '--help[Show help]' '--directory=[Project directory]:directory:_directories' '--json[Structured inspection output]' '--dry-run[Explain without executing]' '--pick[Choose an action; uses fzf if available]' '1:action:->dev-actions' '*::argument:->dev-args'
+      worktools_directory="${(Q)opt_args[--directory]}"
       ;;
     svc)
       commands=('list:List services' 'status:Inspect a unit' 'start:Start a unit' 'stop:Stop a unit' 'restart:Restart a unit' 'logs:Read unit logs' 'timers:List timers' 'failed:List failed units')
@@ -84,57 +107,63 @@ _worktools() {
       ;;
     db)
       commands=('list:List configured connections' 'info:Inspect a connection' 'connect:Open the native client' 'query:Execute a SQL file')
-      _arguments -C '--help[Show help]' '--directory[Project directory]:directory:_directories' '1:action:->commands' '*::argument:->args'
-      worktools_directory="${opt_args[--directory]}"
+      _arguments -C '--help[Show help]' '--directory=[Project directory]:directory:_directories' '1:action:->commands' '*::argument:->args'
+      worktools_directory="${(Q)opt_args[--directory]}"
       ;;
     dots)
       commands=('list:List configuration paths' 'show:Inspect a configuration' 'edit:Edit the actual source' 'check:Check links and supported syntax' 'diff:Show Git changes')
       _arguments -C '--help[Show help]' '1:action:->commands' '*::argument:->args'
       ;;
   esac
+  local worktools_action="$line[1]"
   case "$state" in
-    pod-actions) _worktools_pod_values actions ;;
-    pod-args)
-      local pod_action="$line[1]"
+    pod-args|dev-args|args)
       words=("${worktools_original_words[@]}")
       CURRENT=$worktools_original_current
       if [[ "$words[1]" == worktools ]]; then
         words=("${words[@]:1}")
         (( CURRENT-- ))
       fi
-      case "$pod_action" in
-        explain) _arguments "${pod_options[@]}" '1:operation:' '2:operation:{_worktools_pod_values actions}' ;;
+      ;;
+  esac
+  case "$state" in
+    pod-actions) _worktools_pod_values actions ;;
+    pod-args)
+      case "$worktools_action" in
+        explain) _arguments "${pod_options[@]}" '1:operation:' '2:operation:{_worktools_pod_values operations}' ;;
         providers|actions|services) _arguments "${pod_options[@]}" '1:operation:' ;;
-        *) _arguments "${pod_options[@]}" '1:operation:' '(-d --detach)'{-d,--detach}'[Start detached (up)]' '(-f --follow)'{-f,--follow}'[Follow output (logs)]' '*:service:{_worktools_pod_values services}' ;;
+        containers) _arguments "${pod_options[@]}" '1:operation:' ;;
+        exec) _arguments "${pod_options[@]}" '1:operation:' '2:service:{_worktools_pod_values services}' '*:container command argument:' ;;
+        *) _arguments "${pod_options[@]}" '1:operation:' '*:service:{_worktools_pod_values services}' ;;
       esac
       ;;
     dev-actions) _worktools_dev_actions ;;
     dev-args)
-      if [[ "$words[1]" == explain ]]; then
+      if [[ "$worktools_action" == explain ]]; then
         worktools_dev_inspect=yes
-        _arguments '--help[Show help]' '--json[Structured output]' '1:action:_worktools_dev_actions'
-      elif [[ "$words[1]" == list ]]; then
-        _arguments '--help[Show help]' '--json[Structured output]'
+        _arguments '--help[Show help]' '--directory=[Project directory]:directory:_directories' '--json[Structured output]' '1:command:' '2:action:_worktools_dev_actions'
+      elif [[ "$worktools_action" == list ]]; then
+        _arguments '--help[Show help]' '--directory=[Project directory]:directory:_directories' '--json[Structured output]' '1:command:'
       else
-        _arguments '--help[Show help]' '--dry-run[Explain without executing]' '--json[Structured dry-run output]' '--pick[Choose an action; uses fzf if available]' '*:runner argument:_files'
+        _arguments '--help[Show help]' '--dry-run[Explain without executing]' '--json[Structured dry-run output]' '--pick[Choose an action; uses fzf if available]' '--directory=[Project directory]:directory:_directories' '1:action:' '*:runner argument:_files'
       fi
       ;;
     commands) _describe 'action' commands ;;
     args)
-      case "$service:$words[1]" in
-        svc:logs) _arguments '--help[Show help]' '--json[JSON lines]' '(-f --follow)'{-f,--follow}'[Follow new entries]' '(-n --lines)'{-n,--lines}'[Number of entries]:lines:' '--since[Show entries since]:time:' '1:unit:_worktools_units' ;;
-        svc:status) _arguments '--help[Show help]' '--json[Structured output]' '1:unit:_worktools_units' ;;
-        svc:start|svc:stop|svc:restart) _arguments '--help[Show help]' '1:unit:_worktools_units' ;;
-        svc:list) _arguments '--help[Show help]' '--json[Structured output]' '--aliases[List configured aliases without contacting systemd]' ;;
-        svc:*) _arguments '--help[Show help]' '--json[Structured output]' ;;
-        db:info) _arguments '--help[Show help]' '--json[Structured output]' '1:connection:_worktools_connections' ;;
-        db:connect) _arguments '--help[Show help]' '--pick[Choose interactively; uses fzf if available]' '1:connection:_worktools_connections' ;;
-        db:query) _arguments '--help[Show help]' '--file[SQL file]:file:_files' '1:connection:_worktools_connections' ;;
-        db:list) _arguments '--help[Show help]' '--json[Structured output]' ;;
-        dots:show|dots:check) _arguments '--help[Show help]' '--json[Structured output]' "1:configuration:($names)" ;;
-        dots:edit) _arguments '--help[Show help]' '--pick[Choose interactively; uses fzf if available]' "1:configuration:($names)" ;;
-        dots:diff) _arguments '--help[Show help]' "1:configuration:($names)" ;;
-        dots:list) _arguments '--help[Show help]' '--json[Structured output]' ;;
+      case "$service:$worktools_action" in
+        svc:logs) _arguments '1:action:' '--help[Show help]' '--system[Use system units]' '--json[JSON lines]' '(-f --follow)'{-f,--follow}'[Follow new entries]' '(-n --lines)'{-n,--lines}'[Number of entries]:lines:' '--since=[Show entries since]:time:' '2:unit:_worktools_units' ;;
+        svc:status) _arguments '1:action:' '--help[Show help]' '--system[Use system units]' '--json[Structured output]' '2:unit:_worktools_units' ;;
+        svc:start|svc:stop|svc:restart) _arguments '1:action:' '--help[Show help]' '--system[Use system units]' '2:unit:_worktools_units' ;;
+        svc:list) _arguments '1:action:' '--help[Show help]' '--system[Use system units]' '--json[Structured output]' '--aliases[List configured aliases without contacting systemd]' ;;
+        svc:*) _arguments '1:action:' '--help[Show help]' '--system[Use system units]' '--json[Structured output]' ;;
+        db:info) _arguments '1:action:' '--help[Show help]' '--directory=[Project directory]:directory:_directories' '--json[Structured output]' '2:connection:_worktools_connections' ;;
+        db:connect) _arguments '1:action:' '--help[Show help]' '--directory=[Project directory]:directory:_directories' '--pick[Choose interactively; uses fzf if available]' '2:connection:_worktools_connections' ;;
+        db:query) _arguments '1:action:' '--help[Show help]' '--directory=[Project directory]:directory:_directories' '--file=[SQL file]:file:_files' '2:connection:_worktools_connections' ;;
+        db:list) _arguments '1:action:' '--help[Show help]' '--directory=[Project directory]:directory:_directories' '--json[Structured output]' ;;
+        dots:show|dots:check) _arguments '1:action:' '--help[Show help]' '--json[Structured output]' "2:configuration:($names)" ;;
+        dots:edit) _arguments '1:action:' '--help[Show help]' '--pick[Choose interactively; uses fzf if available]' "2:configuration:($names)" ;;
+        dots:diff) _arguments '1:action:' '--help[Show help]' "2:configuration:($names)" ;;
+        dots:list) _arguments '1:action:' '--help[Show help]' '--json[Structured output]' ;;
       esac
       ;;
   esac

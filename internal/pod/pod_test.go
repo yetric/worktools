@@ -42,10 +42,31 @@ func TestExplicitProviderNeverFallsBack(t *testing.T) {
 }
 func TestPreference(t *testing.T) {
 	for _, tc := range []struct{ cli, env, configured, want string }{{"nerdctl", "docker", "podman", "nerdctl"}, {"", "docker", "podman", "docker"}, {"", "", "podman", "podman"}} {
-		got, _ := Preference(tc.cli, Config{Provider: tc.configured}, tc.env)
+		got, _ := Preference(tc.cli, Config{Provider: tc.configured, DefaultProvider: "fallback"}, tc.env)
 		if got != tc.want {
 			t.Fatal(got, tc)
 		}
+	}
+	if got, _ := Preference("", Config{DefaultProvider: "fallback"}, ""); got != "fallback" {
+		t.Fatal(got)
+	}
+}
+
+func TestUserDefaultConfiguration(t *testing.T) {
+	directory := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", directory)
+	if value, e := LoadDefaultProvider(); value != "" || e != nil {
+		t.Fatal(value, e)
+	}
+	os.MkdirAll(filepath.Join(directory, "worktools"), 0755)
+	file := filepath.Join(directory, "worktools", "config.toml")
+	os.WriteFile(file, []byte("[pod]\nprovider='podman'\n"), 0644)
+	if value, e := LoadDefaultProvider(); value != "podman" || e != nil {
+		t.Fatal(value, e)
+	}
+	os.WriteFile(file, []byte("[invalid"), 0644)
+	if _, e := LoadDefaultProvider(); e == nil {
+		t.Fatal("accepted invalid config")
 	}
 }
 func TestComposeConfigurationAndFileResolution(t *testing.T) {

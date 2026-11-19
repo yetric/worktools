@@ -49,13 +49,21 @@ func Check(t *testing.T, p provider.Provider) {
 		if op.Name == "services" {
 			args = nil
 		}
-		plan, e := p.Plan(info, provider.Request{Action: op.Name, Directory: "/project", Files: []string{"/project/compose.yml"}, Arguments: args})
+		files := []string{"/project/compose.yml"}
+		if op.Name == "containers" {
+			files = nil
+			args = []string{"--all", "--filter", "name=two words"}
+		}
+		plan, e := p.Plan(info, provider.Request{Action: op.Name, Directory: "/project", Files: files, Arguments: args})
 		if e != nil {
 			t.Fatal(e)
 		}
 		want := []string{name, "compose", "--file", "/project/compose.yml", op.Name}
 		if op.Name == "services" {
 			want = []string{name, "compose", "--file", "/project/compose.yml", "config", "--services"}
+		}
+		if op.Name == "containers" {
+			want = []string{name, "ps", "--format", provider.ContainerFormat}
 		}
 		want = append(want, args...)
 		if !reflect.DeepEqual(plan.Command, want) || plan.Directory != "/project" {
@@ -71,6 +79,33 @@ func Check(t *testing.T, p provider.Provider) {
 	}
 	if _, e := p.Plan(unavailable, provider.Request{Action: "up"}); e == nil {
 		t.Fatal("unavailable provider planned an operation")
+	}
+	engineOnly := p.Detect(context.Background(), &FakeProbe{Paths: map[string]string{name: name}})
+	if !engineOnly.Available || engineOnly.ComposeAvailable || !provider.Supports(engineOnly, "containers") || provider.Supports(engineOnly, "up") {
+		t.Fatalf("engine-only capabilities incorrect: %+v", engineOnly)
+	}
+	if _, e := p.Plan(engineOnly, provider.Request{Action: "containers"}); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := p.Plan(engineOnly, provider.Request{Action: "up"}); e == nil {
+		t.Fatal("planned Compose operation without Compose")
+	}
+	if _, e := p.Plan(info, provider.Request{Action: "containers", Files: []string{"compose.yml"}}); e == nil {
+		t.Fatal("applied project files to global listing")
+	}
+	for _, args := range [][]string{{"--quiet"}, {"--format", "{{.ID}}"}, {"--format={{.ID}}"}} {
+		plan, e := p.Plan(engineOnly, provider.Request{Action: "containers", Arguments: args})
+		want := append([]string{name, "ps"}, args...)
+		if e != nil || !reflect.DeepEqual(plan.Command, want) {
+			t.Fatal(plan, e, want)
+		}
+		if _, e := p.Plan(engineOnly, provider.Request{Action: "containers", JSON: true, Arguments: args}); e == nil {
+			t.Fatal("accepted conflicting JSON output flags")
+		}
+	}
+	plan, e := p.Plan(engineOnly, provider.Request{Action: "containers", JSON: true})
+	if e != nil || !reflect.DeepEqual(plan.Command, []string{name, "ps", "--no-trunc", "--format", provider.ContainerJSONFormat}) {
+		t.Fatal(plan, e)
 	}
 	for _, call := range probe.Calls {
 		joined := strings.Join(call, " ")
